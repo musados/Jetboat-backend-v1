@@ -12,8 +12,10 @@ from Classes.AnalogDevice import *
 from Classes.Thermistor import *
 from Classes.Tools import Tools
 from Classes.Gyro2 import IMU as Gyro
+from Classes.GPS import GPS
 from Classes.MyEventHandler import MyEventHandler
 from gpiozero import CPUTemperature
+from pprint import pprint
 
 
 
@@ -57,6 +59,9 @@ class JetboatParameters(BaseModel):
 class Jetboat:
     def __init__(self, boatParams:JetboatParameters, eventHandler: MyEventHandler):
         self.eventHandler = eventHandler
+        self.eventHandler.on('GPS_CHANGED', self.bubbleGPS)
+        self.gps = GPS(self.eventHandler)
+        self.gps_data={}
         self.cpu = CPUTemperature()
         # motor init
         self.motorPin = boatParams.motorPin
@@ -103,6 +108,14 @@ class Jetboat:
         self.lastControlCommand = 0
         self.lastSensorReaded = 0
         print("Boat initialized! :)")
+
+
+    def bubbleGPS(self, source, data):
+        print(source)
+        pprint(data)
+        self.gps_data=data
+        self.eventHandler.trigger('GPS_CHANGED', data)
+
 
     def initMotor(self):
         # init the motor
@@ -162,17 +175,16 @@ class Jetboat:
                 'yaw': self.yaw
             },
             # water
-            'water': {
-                'main': self.waterSensValue
-            },
-            'battery':{}, # to be implemented!
-            'gps':{
-                'latitude':None,
-                'longtitude':None,
-                'altitude':None,
-                'satellites':0,
-                'fix':False,
-            }
+            'water':  self.waterSensValue,
+            'battery':{'percent':70}, # to be implemented!
+            'gps':self.gps_data
+            # {
+            #     'latitude':self.gps.lat,
+            #     'longtitude':self.gps.lon,
+            #     'altitude':None,
+            #     'satellites':0,
+            #     'fix':False,
+            # }
         })
     
     def readAllSensors(self):
@@ -185,6 +197,7 @@ class Jetboat:
             self.raspTemp = self.raspTherm.readTemp()
             self.waterSensValue = self.waterSens.read()
             self.roll,self.pitch,self.yaw = self.gyro.imuUpdate()
+            self.gps.readGPSData()
             print(f'done! interval: {time.time() - nowTime}')
             self.lastSensorReaded = nowTime
             self.triggerEvent('SensorsChanged', self.getSensorsDict())
