@@ -1,8 +1,8 @@
-from fastapi import Depends, FastAPI, HTTPException, status, APIRouter, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, status, APIRouter, Request, Response, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_utils.tasks import repeat_every
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from starlette.responses import PlainTextResponse, RedirectResponse, JSONResponse, FileResponse
+from starlette.responses import PlainTextResponse, RedirectResponse, JSONResponse, FileResponse, StreamingResponse
 import uvicorn
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
@@ -18,6 +18,14 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pprint import pprint
 from fastapi.exceptions import RequestValidationError
+
+
+import io
+import picamera
+import logging
+import socketserver
+from threading import Condition
+from http import server
 
 from Classes.MyEventHandler import MyEventHandler
 from Models import Jetboat
@@ -109,8 +117,8 @@ async def validation_exception_handler(request, exc):
 
 
 def updateSensorsData(source, data: dict):
-    print(f"{type(source)} updated its sensors data!")
-    print('sensor data updated!!')
+    # print(f"{type(source)} updated its sensors data!")
+    # print('sensor data updated!!')
     SensorRouter.sensorsData = json.loads(data)
 
 
@@ -133,7 +141,7 @@ lastUpdate = time.time()
 def send_controls_to_boat(source, controls:dict):
     global jetboat
     if source and type(source) == type(ControlRouter.controlEventHandler) and controls and type(controls) == type({}):
-        jetboat.control(controls['throttle'], controls['roll'])
+        jetboat.control(controls['throttle'], controls['yaw'])
     else:
         print('ERROR: Unknown control or source type!!')
 
@@ -146,7 +154,7 @@ async def boat_loop():
     global jetboat
     
     jetboat.loopTask()
-    print(time.time() - lastUpdate)
+    # print(time.time() - lastUpdate)
     lastUpdate = time.time()
 
 @app.on_event("startup")
@@ -154,6 +162,10 @@ async def startup():
     print('Startup Event - please start the boat')
     #events
     ControlRouter.controlEventHandler.on('onControlAction', send_controls_to_boat)
+    try:
+        os.system('sudo pigpiod')
+    except Exception as e:
+        print(f"Error at startup: {e}")
 
 @app.on_event("shutdown")
 async def shutdown():
@@ -174,14 +186,63 @@ async def index(request: Request, webtop: str = None, remote_path: str = None, p
     # print(token)
     return templates.TemplateResponse("index.html", {"request": request}, media_type='text/html')
 
+import  cv2
 
-@app.post('/val/{value}')
-async def update_val(value: int):
-    global val
-    global jetboat
-    val = value
-    jetboat.control(0, val)
-    return True
+def generatImage():
+    # grab global references to the output frame and lock variables
+    global outputFrame, lock
+    with picamera.PiCamera() as camera:
+        camera.resolution = (400,300)       # pi camera resolution
+        camera.framerate = 15               # 15 frames/sec
+        camera.saturation = 80              # Set image video saturation
+        camera.brightness = 50              # Set the brightness of the image (50 indicates the state of white balance)
+        start = time.time()
+        stream = io.BytesIO()
+        # send jpeg format video stream
+        print ("Start transmit ... ")
+        # loop over frames from the output stream
+        # while True:
+        outputFrame = camera.capture('image.jpg')
+        print(outputFrame)
+        if outputFrame == None:
+            return
+        # wait until the lock is acquired
+        # with lock:
+            # check if the output frame is available, otherwise skip
+            # the iteration of the loop
+        # if outputFrame is None:
+        #     continue
+        # encode the frame in JPEG format
+        # (flag, encodedImage) = cv2.imencode(".jpg", outputFrame)
+        # ensure the frame was successfully encoded
+        # if not flag:
+        #     continue
+        # yield the output frame in the byte format
+        yield (b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' +
+            bytearray(outputFrame) + b'\r\n')
+
+
+@app.get("/video")
+def video_feed():
+    # return the response generated along with the specific media
+    # type (mime type)
+    # return StreamingResponse(generate())
+    return StreamingResponse(generatImage(), media_type="multipart/x-mixed-replace;boundary=frame")
+
+@app.get("/video/stream")
+async def video_endpoint(range: str = Header(None)):
+    start, end = range.replace("bytes=", "").split("-")
+    start = int(start)
+    end = int(end) if end else start + CHUNK_SIZE
+    with open(video_path, "rb") as video:
+        video.seek(start)
+        data = video.read(end - start)
+        filesize = str(video_path.stat().st_size)
+        headers = {
+            'Content-Range': f'bytes {str(start)}-{str(end)}/{filesize}',
+            'Accept-Ranges': 'bytes'
+        }
+        return Response(data, status_code=206, headers=headers, media_type="video/mp4")
 
 if __name__ == "__main__":
     if False:

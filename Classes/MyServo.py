@@ -3,9 +3,9 @@ pi = pigpio.pi()
 from Classes.Tools import Tools
 
 import os
-print("Initializing pigpiod...", end='')
+# print("Initializing pigpiod...", end='')
 os.system('sudo pigpiod')
-print('done!')
+# print('done!')
 
 class MyServo:
     def __init__(self, pin:int, min_pulse:int=1000, max_pulse:int=2000):

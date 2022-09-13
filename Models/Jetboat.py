@@ -7,7 +7,7 @@ from Classes.MyServo import MyServo
 from Classes.read_RPM import reader
 import RPi.GPIO as GPIO
 import os
-os.system('sudo pigpiod')
+# os.system('sudo pigpiod')
 from Classes.AnalogDevice import *
 from Classes.Thermistor import *
 from Classes.Tools import Tools
@@ -16,6 +16,7 @@ from Classes.GPS import GPS
 from Classes.MyEventHandler import MyEventHandler
 from gpiozero import CPUTemperature
 from pprint import pprint
+import asyncio
 
 
 
@@ -114,7 +115,7 @@ class Jetboat:
         print(source)
         pprint(data)
         self.gps_data=data
-        self.eventHandler.trigger('GPS_CHANGED', data)
+        # self.eventHandler.trigger('GPS_CHANGED', data)
 
 
     def initMotor(self):
@@ -197,8 +198,9 @@ class Jetboat:
             self.raspTemp = self.raspTherm.readTemp()
             self.waterSensValue = self.waterSens.read()
             self.roll,self.pitch,self.yaw = self.gyro.imuUpdate()
-            self.gps.readGPSData()
-            print(f'done! interval: {time.time() - nowTime}')
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.gps.readGPSData())
+            # print(f'done! interval: {time.time() - nowTime}')
             self.lastSensorReaded = nowTime
             self.triggerEvent('SensorsChanged', self.getSensorsDict())
     
@@ -214,14 +216,14 @@ class Jetboat:
     
     def loopTask(self):
         nowTime = time.time()
-        if (nowTime - self.lastControlCommand) > 1:
+        if (nowTime - self.lastControlCommand) > 1.2:
             print('timeoutddd')
-            print(f"steering: {self.steeringValue}, gas: {self.gasValue}")
+            # print(f"steering: {self.steeringValue}, gas: {self.gasValue}")
             # self.move()
             self.steer()
         
         self.readAllSensors()
-        self.printAllSensors()
+        # self.printAllSensors()
 
     def destroy(self):
         # poten.destroy()

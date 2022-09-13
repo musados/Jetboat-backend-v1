@@ -4,7 +4,7 @@ from MyServo import MyServo
 from read_RPM import reader
 import RPi.GPIO as GPIO
 import os
-os.system('sudo pigpiod')
+# os.system('sudo pigpiod')
 from AnalogDevice import *
 from Thermometer import *
 from Tools import Tools
